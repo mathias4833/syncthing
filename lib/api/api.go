@@ -92,6 +92,7 @@ type service struct {
 	listenerAddr         net.Addr
 	exitChan             chan *svcutil.FatalErr
 	miscDB               *db.NamespacedKV
+	shutdownTimeout      time.Duration
 
 	guiErrors logger.Recorder
 	systemLog logger.Recorder
@@ -129,6 +130,7 @@ func New(id protocol.DeviceID, cfg config.Wrapper, assetDir, tlsDefaultCommonNam
 		startedOnce:          make(chan struct{}),
 		exitChan:             make(chan *svcutil.FatalErr, 1),
 		miscDB:               miscDB,
+		shutdownTimeout:      100 * time.Millisecond,
 	}
 }
 
@@ -402,6 +404,9 @@ func (s *service) Serve(ctx context.Context) error {
 		// care about we log ourselves from the handlers.
 		ErrorLog: log.New(io.Discard, "", 0),
 	}
+	if shouldDebugHTTP() {
+		srv.ErrorLog = log.Default()
+	}
 
 	l.Infoln("GUI and API listening on", listener.Addr())
 	l.Infoln("Access the GUI via the following URL:", guiCfg.URL())
@@ -448,7 +453,7 @@ func (s *service) Serve(ctx context.Context) error {
 	}
 	// Give it a moment to shut down gracefully, e.g. if we are restarting
 	// due to a config change through the API, let that finish successfully.
-	timeout, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	timeout, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(timeout); err == timeout.Err() {
 		srv.Close()
